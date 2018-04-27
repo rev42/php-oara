@@ -105,6 +105,7 @@ class Effiliation extends \Oara\Network
      * @param \DateTime|null $dStartDate
      * @param \DateTime|null $dEndDate
      * @return array
+     * @throws \Exception
      */
     public function getTransactionList($merchantList = null, \DateTime $dStartDate = null, \DateTime $dEndDate = null)
     {
@@ -112,41 +113,42 @@ class Effiliation extends \Oara\Network
 
         $merchantIdList = \Oara\Utilities::getMerchantIdMapFromMerchantList($merchantList);
 
-        $url = 'https://api.effiliation.com/apiv2/transaction.csv?key=' . $this->_credentials["apiPassword"] . '&start=' . $dStartDate->format("d/m/Y") . '&end=' . $dEndDate->format("d/m/Y") . '&type=date&timestamp=' . time();
+        $url = 'https://api.effiliation.com/apiv2/transaction.csv?key=' . $this->_credentials["apipassword"] . '&start=' . $dStartDate->format("d/m/Y") . '&end=' . $dEndDate->format("d/m/Y") . '&type=date&timestamp=' . time();
         $content = \utf8_encode(\file_get_contents($url));
         $exportData = \str_getcsv($content, "\n");
         $num = \count($exportData);
         for ($i = 1; $i < $num; $i++) {
             $transactionExportArray = \str_getcsv($exportData[$i], "|");
             if (isset($merchantIdList[(int)$transactionExportArray[2]])) {
-
-                $transaction = Array();
+                $transaction = array();
                 $merchantId = (int)$transactionExportArray[2];
                 $transaction['merchantId'] = $merchantId;
-                // Changed Transaction date index from 10 to 12 - 2018-01-01 <PN>
-                $transaction['date'] = $transactionExportArray[12];
+                $transaction['date'] = $transactionExportArray[10];
                 $transaction['unique_id'] = $transactionExportArray[0];
-                $transaction['status'] = \Oara\Utilities::STATUS_PENDING;
-                if ($transactionExportArray[15] != null) {
-                    $transaction['custom_id'] = $transactionExportArray[15];
+
+                if ($transactionExportArray[4] != null) {
+                    $transaction['custom_id'] = $transactionExportArray[4];
                 }
 
                 if ($transactionExportArray[9] == 'Valide') {
                     $transaction['status'] = \Oara\Utilities::STATUS_CONFIRMED;
-                } else
+                } else {
                     if ($transactionExportArray[9] == 'Attente') {
                         $transaction['status'] = \Oara\Utilities::STATUS_PENDING;
-                    } else
-                        if ($transactionExportArray[9] == 'Refusé') {
+                    } else {
+                        if ($transactionExportArray[9] == 'Refusé' || $transactionExportArray[9] == 'Refuse') {
                             $transaction['status'] = \Oara\Utilities::STATUS_DECLINED;
+                        } else {
+                            throw new \Exception("New status {$transactionExportArray[9]}");
                         }
+                    }
+                }
+
                 $transaction['amount'] = \Oara\Utilities::parseDouble($transactionExportArray[7]);
                 $transaction['commission'] = \Oara\Utilities::parseDouble($transactionExportArray[8]);
                 $totalTransactions[] = $transaction;
             }
         }
-
         return $totalTransactions;
     }
-
 }
