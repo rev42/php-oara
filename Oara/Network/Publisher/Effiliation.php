@@ -87,7 +87,7 @@ class Effiliation extends \Oara\Network
     public function getMerchantList()
     {
         $merchants = array();
-        $url = 'https://api.effiliation.com/apiv2/programs.xml?key=' . $this->_credentials["apiPassword"] . "&filter=active&timestamp=" . time();
+        $url = 'https://api.effiliation.com/apiv2/programs.xml?key=' . $this->_credentials["apipassword"] . "&filter=active&timestamp=" . time();
         $content = @\file_get_contents($url);
         $xml = \simplexml_load_string($content, null, LIBXML_NOERROR | LIBXML_NOWARNING);
         foreach ($xml->program as $merchant) {
@@ -123,9 +123,11 @@ class Effiliation extends \Oara\Network
                 $transaction = array();
                 $merchantId = (int)$transactionExportArray[2];
                 $transaction['merchantId'] = $merchantId;
+                // Changed Transaction date index from 10 to 12 - 2018-01-01 <PN>
                 $transaction['date'] = $transactionExportArray[10];
                 $transaction['unique_id'] = $transactionExportArray[0];
 
+                $transaction['status'] = \Oara\Utilities::STATUS_PENDING;
                 if ($transactionExportArray[4] != null) {
                     $transaction['custom_id'] = $transactionExportArray[4];
                 }
