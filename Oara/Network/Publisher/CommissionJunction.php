@@ -59,8 +59,9 @@ class CommissionJunction extends \Oara\Network
      */
     public function login($credentials)
     {
-        $this->_apiPassword = @$credentials['apipassword'];
-        $this->_requestor_cid = @$credentials['id_site'];
+        $this->_apiPassword = $credentials['apipassword'];
+        $this->_requestor_cid = $credentials['requestor_cid'];
+        $this->_website_id = $credentials['id_site'];
     }
 
     /**
@@ -75,6 +76,12 @@ class CommissionJunction extends \Oara\Network
         $parameter["required"] = true;
         $parameter["name"] = "User";
         $credentials["user"] = $parameter;
+
+        $parameter = array();
+        $parameter["description"] = "CID of company for which you would like to make this request";
+        $parameter["required"] = true;
+        $parameter["name"] = "Requestor CID";
+        $credentials["requestor_cid"] = $parameter;
 
         $parameter = array();
         $parameter["description"] = "API Password ";
