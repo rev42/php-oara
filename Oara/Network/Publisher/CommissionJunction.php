@@ -30,6 +30,7 @@ namespace Oara\Network\Publisher;
  */
 class CommissionJunction extends \Oara\Network
 {
+    private $_website_id;
     private $_client = null;
     private $_memberId = null;
     private $_accountId = null;
@@ -140,6 +141,29 @@ class CommissionJunction extends \Oara\Network
 
         $curl_results = curl_exec($ch);
         curl_close($ch);
+        return $curl_results;
+    }
+
+    private function apiCallGraphQl(string $query)
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $query);
+        curl_setopt($ch, CURLOPT_URL, 'https://commissions.api.cj.com/query');
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt(
+            $ch,
+            CURLOPT_HTTPHEADER,
+            array(
+                'Authorization: Bearer ' . $this->_apiPassword,
+                'Content-Type: application/json;charset=utf-8',
+            )
+        );
+        $curl_results = curl_exec($ch);
+        curl_close($ch);
+
         return $curl_results;
     }
 
@@ -258,64 +282,87 @@ class CommissionJunction extends \Oara\Network
      * @param \DateTime|null $dStartDate
      * @param \DateTime|null $dEndDate
      * @return array
-     * @throws Exception
+     * @throws \Exception
      */
     public function getTransactionList($merchantList = null, \DateTime $dStartDate = null, \DateTime $dEndDate = null)
     {
-        $totalTransactions = Array();
+        $merchantIdArray = array();
         if (!is_null($merchantList) && is_array($merchantList) && count($merchantList) > 0) {
             $merchantIdArray = \array_keys(\Oara\Utilities::getMerchantIdMapFromMerchantList($merchantList));
-            $iteration = self::calculeIterationNumber(\count($merchantIdArray), '20');
-            $byMerchant = true;
         }
-        else {
-            $iteration = 1;
-            $byMerchant = false;
+
+        if (!$dStartDate) {
+            $dStartDate = (new \DateTime())->sub(new \DateInterval('P1D'));
+            $dEndDate = (new \DateTime())->add(new \DateInterval('P1D'));
         }
-        for ($it = 0; $it < $iteration; $it++) {
-            try {
-                $transactionDateEnd = clone $dEndDate;
-                $transactionDateEnd->add(new \DateInterval('P1D'));
-                if ($byMerchant) {
-                    // Only selected merchants
-                    $merchantSlice = \array_slice($merchantIdArray, $it * 20, 20);
-                    $restUrl = 'https://commission-detail.api.cj.com/v3/commissions?cids=' . \implode(',', $merchantSlice) . '&date-type=posting&start-date=' . $dStartDate->format("Y-m-d") . '&end-date=' . $transactionDateEnd->format("Y-m-d");
-                }
-                else {
-                    // All merchants
-                    $restUrl = 'https://commission-detail.api.cj.com/v3/commissions?date-type=posting&start-date=' . $dStartDate->format("Y-m-d") . '&end-date=' . $transactionDateEnd->format("Y-m-d");
-                }
-                $totalTransactions = \array_merge($totalTransactions, self::getTransactionsXml($restUrl, $merchantList));
-            } catch (\Exception $e) {
-                $amountDays = $dStartDate->diff($dEndDate)->days;
-                $auxDate = clone $dStartDate;
-                for ($j = 0; $j < $amountDays; $j++) {
-                    $transactionDateEnd = clone $auxDate;
-                    $transactionDateEnd->add(new \DateInterval('P1D'));
-                    $restUrl = 'https://commission-detail.api.cj.com/v3/commissions?cids=' . \implode(',', $merchantSlice) . '&date-type=posting&start-date=' . $auxDate->format("Y-m-d") . '&end-date=' . $transactionDateEnd->format("Y-m-d");
-                    try {
-                        $totalTransactions = \array_merge($totalTransactions, self::getTransactionsXml($restUrl, $merchantList));
-                    } catch (\Exception $e) {
-                        $try = 0;
-                        $done = false;
-                        while (!$done && $try < 5) {
-                            try {
-                                $totalTransactions = \array_merge($totalTransactions, self::transactionsByType(\implode(',', $merchantSlice), $auxDate, $transactionDateEnd, $merchantList));
-                                $done = true;
-                            } catch (\Exception $e) {
-                                $try++;
-                                //echo "try again $try\n\n";
-                            }
-                        }
-                        if ($try == 5) {
-                            throw new \Exception("Couldn't get data from the Transaction");
-                        }
-                    }
-                    $auxDate->add(new \DateInterval('P1D'));
-                }
-            }
+
+        return $this->transformTransactions(
+            json_decode($this->getTransactionsGraphQl($dStartDate, $dEndDate, $merchantIdArray), true)
+        );
+    }
+
+    /**
+     * @param array $transactions
+     * @return array
+     * @throws \Exception
+     */
+    private function transformTransactions(array $transactions)
+    {
+        if (array_key_exists('errors', $transactions)) {
+            throw new \Exception(json_encode($transactions['errors']));
         }
-        return $totalTransactions;
+
+        return array_map(function ($transaction) {
+            return [
+                'unique_id' => $transaction['commissionId'],
+                'action' => $transaction['actionType'],
+                'merchantId' => $transaction['advertiserId'],
+                'date' => (\DateTime::createFromFormat('Y-m-d\TH:i:s\Z', $transaction['eventDate']))
+                            ->format("Y-m-d H:i:sO"),
+                'custom_id' => $transaction['shopperId'],
+                'amount' => $transaction['saleAmountPubCurrency'],
+                'status' => $this->convertStatus(
+                    $transaction['actionStatus'],
+                    $transaction['pubCommissionAmountPubCurrency']
+                ),
+                'commission' => $transaction['pubCommissionAmountPubCurrency'],
+                'aid' => $transaction['aid'],
+                'order-id' => $transaction['orderId'],
+                'original' => $transaction['original'],
+                'original-action-id' => $transaction['originalActionId'],
+            ];
+        }, $transactions['data']['publisherCommissions']['records']);
+    }
+
+    /**
+     * @param string $apiStatus
+     * @param $commission
+     * @return string
+     */
+    private function convertStatus(string $apiStatus, $commission)
+    {
+        switch ($apiStatus) {
+            case 'closed':
+            case 'locked':
+                $status = \Oara\Utilities::STATUS_CONFIRMED;
+                break;
+            case 'extended':
+            case 'new':
+                $status = \Oara\Utilities::STATUS_PENDING;
+                break;
+            case 'corrected':
+                $status = \Oara\Utilities::STATUS_DECLINED;
+                break;
+            default:
+                $status = \Oara\Utilities::STATUS_PENDING;
+                break;
+        }
+
+        if ($commission == 0) {
+            $status = \Oara\Utilities::STATUS_PENDING;
+        }
+
+        return $status;
     }
 
     /**
@@ -445,10 +492,46 @@ class CommissionJunction extends \Oara\Network
         return $totalTransactions;
     }
 
+    private function getTransactionsGraphQl(\DateTimeInterface $startDate, \DateTimeInterface $endDate, $merchantIds = [])
+    {
+        $query = <<<'JSON'
+{
+    publisherCommissions(
+        forPublishers: ["%publisherId%"]
+        sincePostingDate:"%startDate%"
+        beforePostingDate:"%endDate%"
+        websiteIds: ["%websiteId%"]
+    ) {
+        count
+        payloadComplete
+        records {
+          aid
+          advertiserId
+          eventDate
+          original
+          originalActionId
+          orderId
+          commissionId
+          pubCommissionAmountPubCurrency
+          saleAmountPubCurrency
+          actionStatus
+          actionType
+          postingDate
+          shopperId
+        } 
+    }
+}
+JSON;
+        return self::apiCallGraphQl(strtr($query, [
+            '%publisherId%' => $this->_requestorCid,
+            '%startDate%' => $startDate->format('Y-m-d\TH:i:s\Z'),
+            '%endDate%' => $endDate->format('Y-m-d\TH:i:s\Z'),
+            '%websiteId%' => $this->_website_id,
+        ]));
+    }
+
     /**
      * @param $pid
-     * @param null $merchantList
-     * @param null $startDate
      * @return array
      */
     public function paymentTransactions($pid)
