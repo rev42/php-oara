@@ -78,8 +78,7 @@ class AffiliNet extends \Oara\Network
      */
     public function checkConnection()
     {
-        $connection = true;
-        return $connection;
+        return !empty($this->_token);
     }
 
     /**
