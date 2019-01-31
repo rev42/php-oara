@@ -111,7 +111,10 @@ class Effiliation extends \Oara\Network
     {
         $totalTransactions = array();
 
-        $merchantIdList = \Oara\Utilities::getMerchantIdMapFromMerchantList($merchantList);
+        $merchantIdList = [];
+        if ($merchantList) {
+            $merchantIdList = \Oara\Utilities::getMerchantIdMapFromMerchantList($merchantList);
+        }
 
         $url = 'https://api.effiliation.com/apiv2/transaction.csv?key=' . $this->_credentials["apipassword"] . '&start=' . $dStartDate->format("d/m/Y") . '&end=' . $dEndDate->format("d/m/Y") . '&type=date&timestamp=' . time();
         $content = \utf8_encode(\file_get_contents($url));
@@ -119,7 +122,7 @@ class Effiliation extends \Oara\Network
         $num = \count($exportData);
         for ($i = 1; $i < $num; $i++) {
             $transactionExportArray = \str_getcsv($exportData[$i], "|");
-            if (isset($merchantIdList[(int)$transactionExportArray[2]])) {
+            if ($merchantList === null || isset($merchantIdList[(int)$transactionExportArray[2]])) {
                 $transaction = array();
                 $merchantId = (int)$transactionExportArray[2];
                 $transaction['merchantId'] = $merchantId;
