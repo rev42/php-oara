@@ -116,8 +116,10 @@ class TradeTracker extends \Oara\Network
     public function getTransactionList($merchantList = null, \DateTime $dStartDate = null, \DateTime $dEndDate = null)
     {
         $totalTransactions = array();
-        $merchantIdList = \Oara\Utilities::getMerchantIdMapFromMerchantList($merchantList);
-
+        $merchantIdList = array();
+        if (!is_null($merchantList)) {
+            $merchantIdList = \Oara\Utilities::getMerchantIdMapFromMerchantList($merchantList);
+        }
         $options = array(
             'registrationDateFrom' => $dStartDate->format('Y-m-d'),
             'registrationDateTo' => $dEndDate->add(new \DateInterval('P1D'))->format('Y-m-d'),
