@@ -6,7 +6,6 @@
         "php": ">=7.0.0",
         "phpoffice/phpspreadsheet": "1.14.1",
         "ext-curl": "*",
-        "ext-gd": "*",
         "ext-json": "*",
         "zendframework/zend-dom": "*"
     },
